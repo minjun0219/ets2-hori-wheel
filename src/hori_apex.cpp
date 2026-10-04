@@ -49,6 +49,7 @@ char g_names[INPUT_COUNT][8];
 char g_labels[INPUT_COUNT][24];
 
 std::atomic<unsigned long> g_reports{0}, g_frames{0};
+std::atomic<unsigned> g_thr_max{0}, g_brk_max{0};
 std::mutex g_log_lock;
 
 // 로그 파일 경로: 환경 변수 HORI_APEX_LOG > 빌드 때 HORI_APEX_LOG_PATH > ~/Library/Logs/hori-apex.log
@@ -89,6 +90,10 @@ void on_report(void *, IOReturn, void *, IOHIDReportType, uint32_t, uint8_t *rep
 	memcpy(g_report, report, kReportLen);
 	g_have_report = true;
 	++g_reports;
+	// 상태 로그용: 직전 5초 동안 페달 최대값
+	const unsigned t = u16(report, 52), b = u16(report, 54);
+	for (unsigned cur = g_thr_max.load(); t > cur && !g_thr_max.compare_exchange_weak(cur, t);) {}
+	for (unsigned cur = g_brk_max.load(); b > cur && !g_brk_max.compare_exchange_weak(cur, b);) {}
 }
 
 void on_match(void *, IOReturn, void *, IOHIDDeviceRef device)
@@ -117,9 +122,11 @@ void hid_thread()
 	else plog(SCS_LOG_TYPE_message, "[hori-apex] HID manager open");
 	// 5초마다 상태: 휠 리포트 수 · 게임이 값을 가져간 프레임 수 · 마지막 조향
 	CFRunLoopTimerRef timer = CFRunLoopTimerCreateWithHandler(nullptr, CFAbsoluteTimeGetCurrent() + 5, 5, 0, 0, ^(CFRunLoopTimerRef) {
-		unsigned steer;
+		unsigned steer, thr, brk;
 		{ std::lock_guard<std::mutex> g(g_lock); steer = g_have_report ? u16(g_report, 50) : 0; }
-		plog(SCS_LOG_TYPE_message, "[hori-apex] status reports=%lu frames=%lu steer_raw=0x%04x", g_reports.load(), g_frames.load(), steer);
+		thr = g_thr_max.exchange(0); brk = g_brk_max.exchange(0);
+		plog(SCS_LOG_TYPE_message, "[hori-apex] status reports=%lu frames=%lu steer_raw=0x%04x thr_max=0x%04x brk_max=0x%04x",
+			g_reports.load(), g_frames.load(), steer, thr, brk);
 	});
 	CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopDefaultMode);
 	CFRunLoopRun();
@@ -153,6 +160,12 @@ bool button_value(const uint8_t *r, scs_u32_t b)
 	return (r[7] >> (b - 16)) & 1;
 }
 
+// 마지막으로 게임에 보낸 값. 바뀐 입력만 이벤트로 보낸다 — 매 프레임 전부 보내면 게임이 이 장치를
+// 계속 "조작 중"으로 보고 같은 기능에 묶인 키보드 입력을 덮는다(2026-10-04 실측: 페달 0 이 키보드 가속 · 브레이크를 막았다).
+float g_sent_axis[AXIS_COUNT];
+bool g_sent_btn[BUTTON_COUNT];
+bool g_force_all = true;
+
 SCSAPI_RESULT input_event_callback(scs_input_event_t *const ev, const scs_u32_t flags, const scs_context_t)
 {
 	if (flags & SCS_INPUT_EVENT_CALLBACK_FLAG_first_in_frame) {
@@ -161,14 +174,28 @@ SCSAPI_RESULT input_event_callback(scs_input_event_t *const ev, const scs_u32_t 
 		memcpy(g_snap, g_report, kReportLen);
 		g_next = 0;
 		++g_frames;
+		if (flags & SCS_INPUT_EVENT_CALLBACK_FLAG_first_after_activation) g_force_all = true;
 	}
-	if (g_next >= INPUT_COUNT) return SCS_RESULT_not_found;
-
-	ev->input_index = g_next;
-	if (g_next < AXIS_COUNT) ev->value_float.value = axis_value(g_snap, g_next);
-	else ev->value_bool.value = button_value(g_snap, g_next - AXIS_COUNT) ? 1 : 0;
-	++g_next;
-	return SCS_RESULT_ok;
+	for (; g_next < INPUT_COUNT; ++g_next) {
+		const scs_u32_t i = g_next;
+		if (i < AXIS_COUNT) {
+			const float v = axis_value(g_snap, i);
+			if (!g_force_all && (v - g_sent_axis[i]) < 0.002f && (g_sent_axis[i] - v) < 0.002f) continue;
+			g_sent_axis[i] = v;
+			ev->input_index = i;
+			ev->value_float.value = v;
+		} else {
+			const bool v = button_value(g_snap, i - AXIS_COUNT);
+			if (!g_force_all && v == g_sent_btn[i - AXIS_COUNT]) continue;
+			g_sent_btn[i - AXIS_COUNT] = v;
+			ev->input_index = i;
+			ev->value_bool.value = v ? 1 : 0;
+		}
+		++g_next;
+		return SCS_RESULT_ok;
+	}
+	g_force_all = false;
+	return SCS_RESULT_not_found;
 }
 
 } // namespace
