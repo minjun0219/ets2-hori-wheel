@@ -50,10 +50,12 @@ char g_names[INPUT_COUNT][8];
 char g_labels[INPUT_COUNT][24];
 
 std::atomic<unsigned long> g_reports{0}, g_frames{0};
+#ifdef HORI_APEX_DIAG
+// 진단(`make DIAG=1`): 직전 5초 동안 페달 최대값 · 바이트별 최소 · 최대 — 움직인 바이트를 찾아 매핑을 실측한다.
 std::atomic<unsigned> g_thr_max{0}, g_brk_max{0};
-// 진단: 직전 5초 동안 바이트별 최소 · 최대 — 움직인 바이트를 찾아 매핑을 실측한다.
 uint8_t g_bmin[kReportLen], g_bmax[kReportLen];
 bool g_brange_init = false;
+#endif
 std::mutex g_log_lock;
 
 // 로그 파일 경로: 환경 변수 HORI_APEX_LOG > 빌드 때 HORI_APEX_LOG_PATH > ~/Library/Logs/hori-apex.log
@@ -150,12 +152,14 @@ void on_report(void *, IOReturn, void *, IOHIDReportType, uint32_t, uint8_t *rep
 	memcpy(g_report, report, kReportLen);
 	g_have_report = true;
 	++g_reports;
+#ifdef HORI_APEX_DIAG
 	if (!g_brange_init) { memcpy(g_bmin, report, kReportLen); memcpy(g_bmax, report, kReportLen); g_brange_init = true; }
 	for (size_t i = 0; i < kReportLen; ++i) { if (report[i] < g_bmin[i]) g_bmin[i] = report[i]; if (report[i] > g_bmax[i]) g_bmax[i] = report[i]; }
 	// 상태 로그용: 직전 5초 동안 페달 최대값
 	const unsigned t = u16(report, 52), b = u16(report, 54);
 	for (unsigned cur = g_thr_max.load(); t > cur && !g_thr_max.compare_exchange_weak(cur, t);) {}
 	for (unsigned cur = g_brk_max.load(); b > cur && !g_brk_max.compare_exchange_weak(cur, b);) {}
+#endif
 }
 
 void on_match(void *, IOReturn, void *, IOHIDDeviceRef device)
@@ -184,9 +188,10 @@ void hid_thread()
 	else plog(SCS_LOG_TYPE_message, "[hori-apex] HID manager open");
 	// 5초마다 상태: 휠 리포트 수 · 게임이 값을 가져간 프레임 수 · 마지막 조향
 	CFRunLoopTimerRef timer = CFRunLoopTimerCreateWithHandler(nullptr, CFAbsoluteTimeGetCurrent() + 5, 5, 0, 0, ^(CFRunLoopTimerRef) {
-		unsigned steer, thr, brk;
+		unsigned steer;
 		{ std::lock_guard<std::mutex> g(g_lock); steer = g_have_report ? u16(g_report, 50) : 0; }
-		thr = g_thr_max.exchange(0); brk = g_brk_max.exchange(0);
+#ifdef HORI_APEX_DIAG
+		const unsigned thr = g_thr_max.exchange(0), brk = g_brk_max.exchange(0);
 		char moved[512]; int n = 0; moved[0] = 0;
 		{
 			std::lock_guard<std::mutex> g(g_lock);
@@ -196,6 +201,10 @@ void hid_thread()
 		}
 		plog(SCS_LOG_TYPE_message, "[hori-apex] status reports=%lu frames=%lu steer_raw=0x%04x thr_max=0x%04x brk_max=0x%04x moved=[%s ]",
 			g_reports.load(), g_frames.load(), steer, thr, brk, moved);
+#else
+		plog(SCS_LOG_TYPE_message, "[hori-apex] status reports=%lu frames=%lu steer_raw=0x%04x",
+			g_reports.load(), g_frames.load(), steer);
+#endif
 	});
 	CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopDefaultMode);
 	CFRunLoopRun();

@@ -4,6 +4,8 @@
 #   make check      게임 없이 플러그인을 3초 돌려 장치 등록 · 이름 규칙 · 휠 연결을 본다
 #   make install    현재 사용자의 Steam ETS2 plugins 폴더에 복사한다
 #   make LOG=<경로> CONF=<경로>   로그 · 설정 파일 경로를 빌드에 박는다(여러 계정에서 같이 볼 때)
+#   make DIAG=1     상태 로그에 페달 최대값 · 움직인 바이트를 더한다(매핑을 다시 잴 때)
+#   빌드 옵션을 바꿨으면 `make -B` — 소스가 그대로면 다시 빌드하지 않는다
 
 SDK_VERSION := 1_15
 SDK_URL     := https://download.eurotrucksimulator2.com/scs_sdk_$(SDK_VERSION).zip
@@ -19,6 +21,9 @@ CXXFLAGS += -DHORI_APEX_LOG_PATH='"$(LOG)"'
 endif
 ifdef CONF
 CXXFLAGS += -DHORI_APEX_CONF_PATH='"$(CONF)"'
+endif
+ifdef DIAG
+CXXFLAGS += -DHORI_APEX_DIAG
 endif
 
 PLUGINS_DIR := $(HOME)/Library/Application Support/Steam/steamapps/common/Euro Truck Simulator 2/Euro Truck Simulator 2.app/Contents/MacOS/plugins
