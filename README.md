@@ -3,7 +3,10 @@
 macOS 에서 **HORI Racing Wheel Apex** 를 **Euro Truck Simulator 2 / American Truck Simulator** 의 입력 장치로 쓰게 하는
 SCS SDK Input 플러그인.
 
-> Status: experimental. 플러그인 로드 · 장치 등록까지 실측했다. 게임 안 조작 연결은 확인 중.
+> Status: experimental. 플러그인 로드 · 장치 등록, 조향 · 가속 · 브레이크가 게임에 들어가는 것까지 실측했다.
+
+> HORI, Euro Truck Simulator 2, American Truck Simulator, SCS Software 와 관련 없는 비공식 프로젝트다.
+> 각 상표는 해당 소유자의 것이며, 이 문서에서는 호환 대상을 밝히는 데만 쓴다.
 
 ## 왜 필요한가
 
