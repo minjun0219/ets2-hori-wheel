@@ -1,0 +1,5 @@
+build/
+*.so
+*.log
+state.json
+.DS_Store

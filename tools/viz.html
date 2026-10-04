@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HORI Apex 입력</title>
+<style>
+  :root { --bg:#0f1115; --fg:#e8eaf0; --dim:#7c8394; --accent:#4f9cff; --ok:#3ecf8e; --warn:#ff8a3d; --card:#181b22; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.4 -apple-system, "Apple SD Gothic Neo", sans-serif; }
+  main { max-width:880px; margin:24px auto; padding:0 16px; display:grid; gap:16px; }
+  .card { background:var(--card); border-radius:14px; padding:18px; }
+  h1 { font-size:18px; margin:0; } .sub { color:var(--dim); font-size:13px; }
+  .row { display:flex; gap:24px; align-items:center; flex-wrap:wrap; }
+  #wheel { width:220px; height:220px; transition:transform .03s linear; }
+  .bars { flex:1; display:grid; gap:12px; min-width:260px; }
+  .bar { display:grid; grid-template-columns:80px 1fr 64px; align-items:center; gap:10px; }
+  .track { height:14px; background:#262a33; border-radius:7px; overflow:hidden; position:relative; }
+  .fill { height:100%; width:0; background:var(--accent); }
+  .center { position:absolute; left:50%; top:0; bottom:0; width:2px; background:#555; }
+  .num { font-variant-numeric:tabular-nums; text-align:right; color:var(--dim); }
+  .btns { display:grid; grid-template-columns:repeat(auto-fill, minmax(64px,1fr)); gap:8px; }
+  .btn { text-align:center; padding:8px 0; border-radius:8px; background:#262a33; color:var(--dim); font-size:13px; }
+  .btn.on { background:var(--ok); color:#06210f; font-weight:600; }
+  #status.bad { color:var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <div class="card"><h1>HORI Racing Wheel Apex — SCS 플러그인 입력</h1>
+    <div class="sub">플러그인(<code>hori_apex.so</code>)이 게임에 넘기는 값 그대로 · <span id="status">대기 중…</span></div></div>
+  <div class="card row">
+    <svg id="wheel" viewBox="-110 -110 220 220" aria-label="조향">
+      <circle r="100" fill="none" stroke="#3a3f4b" stroke-width="16"/>
+      <circle r="100" fill="none" stroke="#4f9cff" stroke-width="16" stroke-dasharray="40 588" transform="rotate(-110)"/>
+      <rect x="-100" y="-8" width="200" height="16" rx="6" fill="#3a3f4b"/>
+      <rect x="-8" y="0" width="16" height="96" rx="6" fill="#3a3f4b"/>
+      <circle r="24" fill="#262a33"/>
+    </svg>
+    <div class="bars">
+      <div class="bar"><span>조향</span><div class="track"><div class="center"></div><div class="fill" id="steer"></div></div><span class="num" id="steerN">0</span></div>
+      <div class="bar"><span>가속</span><div class="track"><div class="fill" id="thr" style="background:var(--ok)"></div></div><span class="num" id="thrN">0</span></div>
+      <div class="bar"><span>브레이크</span><div class="track"><div class="fill" id="brk" style="background:var(--warn)"></div></div><span class="num" id="brkN">0</span></div>
+      <div class="bar"><span>L2</span><div class="track"><div class="fill" id="l2"></div></div><span class="num" id="l2N">0</span></div>
+      <div class="bar"><span>R2</span><div class="track"><div class="fill" id="r2"></div></div><span class="num" id="r2N">0</span></div>
+    </div>
+  </div>
+  <div class="card"><div class="sub" style="margin-bottom:10px">버튼 (b1–b8 = byte4, b9–b16 = byte5, b17–b19 = byte7)</div><div class="btns" id="btns"></div></div>
+</main>
+<script>
+const btns = document.getElementById('btns');
+for (let i = 1; i <= 19; i++) { const d = document.createElement('div'); d.className = 'btn'; d.id = 'b' + i; d.textContent = 'b' + i; btns.append(d); }
+const pct = v => Math.max(0, Math.min(1, v)) * 100;
+const set = (id, v, fmt) => { document.getElementById(id + 'N').textContent = fmt(v); };
+let last = 0;
+async function tick() {
+  try {
+    const s = await (await fetch('state.json?' + Date.now(), { cache: 'no-store' })).json();
+    last = Date.now();
+    const steer = s.steer ?? 0;
+    document.getElementById('wheel').style.transform = `rotate(${steer * 135}deg)`;   // Apex 270° → ±135°
+    const st = document.getElementById('steer');
+    st.style.marginLeft = steer < 0 ? `${50 + steer * 50}%` : '50%';
+    st.style.width = `${Math.abs(steer) * 50}%`;
+    set('steer', steer, v => (v * 135).toFixed(0) + '°');
+    for (const k of ['thr', 'brk', 'l2', 'r2']) { document.getElementById(k).style.width = pct(s[k] ?? 0) + '%'; set(k, s[k] ?? 0, v => (v * 100).toFixed(0) + '%'); }
+    for (let i = 1; i <= 19; i++) document.getElementById('b' + i).classList.toggle('on', !!s['b' + i]);
+    const el = document.getElementById('status'); el.textContent = '수신 중'; el.className = '';
+  } catch {
+    if (Date.now() - last > 1500) { const el = document.getElementById('status'); el.textContent = '값이 안 들어옴 (하네스가 꺼졌거나 휠 미연결)'; el.className = 'bad'; }
+  }
+  setTimeout(tick, 33);
+}
+tick();
+</script>
+</body>
+</html>
