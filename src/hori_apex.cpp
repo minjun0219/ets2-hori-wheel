@@ -10,6 +10,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <ctime>
 #include <unistd.h>
 #include <cstring>
@@ -84,6 +85,62 @@ void plog(scs_log_type_t type, const char *fmt, ...)
 	}
 }
 
+// 조향 설정 — 게임 시작(또는 콘솔 `sdk reinit`) 때 설정 파일에서 읽는다.
+// 파일: 환경 변수 HORI_APEX_CONF > 빌드 때 HORI_APEX_CONF_PATH > ~/Library/Application Support/hori-apex.conf
+// 형식: `키 = 값` 한 줄씩, `#` 뒤는 주석. 없거나 못 읽으면 기본값(효과 없음).
+struct Config {
+	float steer_curve = 1.0f;     // 1 = 그대로, 2 = 가운데가 둔하고 끝에서 급해진다 (출력 = 부호 · |x|^curve)
+	float steer_deadzone = 0.0f;  // 가운데에서 무시할 폭(0 … 0.3). 그 밖은 다시 0 … 1 로 펼친다
+	float steer_scale = 1.0f;     // 마지막에 곱한다(1 미만이면 끝까지 돌려도 덜 꺾인다). ±1 로 자른다
+} g_cfg;
+
+const char *conf_path()
+{
+	static char path[1024];
+	if (!path[0]) {
+		if (const char *e = getenv("HORI_APEX_CONF")) snprintf(path, sizeof path, "%s", e);
+#ifdef HORI_APEX_CONF_PATH
+		else snprintf(path, sizeof path, "%s", HORI_APEX_CONF_PATH);
+#else
+		else snprintf(path, sizeof path, "%s/Library/Application Support/hori-apex.conf", getenv("HOME") ? getenv("HOME") : "/tmp");
+#endif
+	}
+	return path;
+}
+
+float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+void load_config()
+{
+	g_cfg = Config{};
+	FILE *f = fopen(conf_path(), "r");
+	if (!f) { plog(SCS_LOG_TYPE_message, "[hori-apex] no config at %s — defaults", conf_path()); return; }
+	char line[256];
+	while (fgets(line, sizeof line, f)) {
+		if (char *h = strchr(line, '#')) *h = 0;
+		char key[64]; float val;
+		if (sscanf(line, " %63[a-z_] = %f", key, &val) != 2) continue;
+		if (!strcmp(key, "steer_curve")) g_cfg.steer_curve = clampf(val, 0.2f, 5.0f);
+		else if (!strcmp(key, "steer_deadzone")) g_cfg.steer_deadzone = clampf(val, 0.0f, 0.3f);
+		else if (!strcmp(key, "steer_scale")) g_cfg.steer_scale = clampf(val, 0.1f, 2.0f);
+		else plog(SCS_LOG_TYPE_warning, "[hori-apex] unknown config key '%s'", key);
+	}
+	fclose(f);
+	plog(SCS_LOG_TYPE_message, "[hori-apex] config %s: steer_curve=%.2f steer_deadzone=%.3f steer_scale=%.2f",
+		conf_path(), g_cfg.steer_curve, g_cfg.steer_deadzone, g_cfg.steer_scale);
+}
+
+// 원시 조향(-1 … +1)에 데드존 → 곡선 → 배율을 씌운다.
+float shape_steer(float x)
+{
+	const float sign = x < 0 ? -1.f : 1.f;
+	float a = fabsf(x);
+	const float dz = g_cfg.steer_deadzone;
+	a = a <= dz ? 0.f : (a - dz) / (1.f - dz);
+	a = powf(a, g_cfg.steer_curve);
+	return clampf(sign * a * g_cfg.steer_scale, -1.f, 1.f);
+}
+
 inline unsigned u16(const uint8_t *r, size_t at) { return r[at] | (r[at + 1] << 8); }
 
 void on_report(void *, IOReturn, void *, IOHIDReportType, uint32_t, uint8_t *report, CFIndex len)
@@ -153,10 +210,8 @@ void hid_thread()
 float axis_value(const uint8_t *r, scs_u32_t i)
 {
 	switch (i) {
-	case AX_STEER: {
-		const float s = (static_cast<int>(u16(r, 50)) - 0x8000) / 32768.0f;
-		return s < -1.f ? -1.f : (s > 1.f ? 1.f : s);
-	}
+	case AX_STEER:
+		return shape_steer(clampf((static_cast<int>(u16(r, 50)) - 0x8000) / 32768.0f, -1.f, 1.f));
 	// 페달 · 아날로그 버튼은 -1(뗌) … +1(끝까지). 게임은 축을 -1 … +1 로 읽어서 0 … 1 을 주면 뗀 상태(0)가
 	// 가운데(50%)로 잡혔다 — 브레이크가 늘 반쯤 밟혀 키보드 가속까지 막혔다(2026-10-04 실측).
 	case AX_THROTTLE: return u16(r, 52) / 32767.5f - 1.0f;
@@ -219,6 +274,7 @@ SCSAPI_RESULT scs_input_init(const scs_u32_t version, const scs_input_init_param
 	if (version != SCS_INPUT_VERSION_1_00) return SCS_RESULT_unsupported;
 	const auto *p = static_cast<const scs_input_init_params_v100_t *>(params);
 	g_log = p->common.log;
+	load_config();
 
 	static const char *axis_names[AXIS_COUNT][2] = {
 		{"steer", "Steering"}, {"thr", "Throttle"}, {"brk", "Brake"}, {"l2", "L2 analog"}, {"r2", "R2 analog"},

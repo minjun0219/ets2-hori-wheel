@@ -38,6 +38,20 @@ Steam 라이브러리에서 ETS2 를 찾아 plugins 폴더에 복사하고 원�
 
 게임을 켜면 "SDK 플러그인 사용" 경고가 뜬다. 옵션 → 조작에서 **"HORI Racing Wheel Apex SDK"** 를 고르고 `steer` · `thr` · `brk` 를 연결한다.
 
+## 조향 설정 (270° 휠 → 트럭)
+
+Apex 는 끝에서 끝까지 270° 라 트럭 핸들(900° 이상)보다 훨씬 적게 돈다 — 조금만 돌려도 크게 꺾인다. 설정 파일로
+**가운데를 둔하게** 만든다. `hori-apex.conf.example` 을 `~/Library/Application Support/hori-apex.conf` 로 복사해 고친다
+(경로는 환경 변수 `HORI_APEX_CONF` 또는 `make CONF=<경로>`). 게임 시작 때 읽는다 — 바꾼 뒤 게임을 다시 켜거나 콘솔에서 `sdk reinit`.
+
+| 키 | 기본 | 뜻 |
+|---|---|---|
+| `steer_curve` | 1.0 | 출력 = 부호 · \|x\|^curve. 2.0 이면 절반 돌렸을 때 25% |
+| `steer_deadzone` | 0.0 | 가운데 무시 폭(0 … 0.3), 그 밖은 다시 펼친다 |
+| `steer_scale` | 1.0 | 마지막 배율(±1 로 자른다) |
+
+게임 설정의 "조향 비선형성"과 겹치면 효과가 너무 세다 — 둘 중 하나만 쓴다. 읽은 값은 로그에 `config …` 줄로 남는다.
+
 ## 확인 도구
 
 - `tools/hidsniff.swift` — 휠의 원시 리포트를 읽어 바뀐 바이트를 찍는다(매핑을 다시 잴 때).

@@ -3,7 +3,7 @@
 #   make            SDK 를 받아(처음 한 번) 플러그인과 도구를 빌드한다
 #   make check      게임 없이 플러그인을 3초 돌려 장치 등록 · 이름 규칙 · 휠 연결을 본다
 #   make install    현재 사용자의 Steam ETS2 plugins 폴더에 복사한다
-#   make LOG=/Users/Shared/hori-apex/plugin.log   로그 경로를 빌드에 박는다(여러 계정에서 볼 때)
+#   make LOG=<경로> CONF=<경로>   로그 · 설정 파일 경로를 빌드에 박는다(여러 계정에서 같이 볼 때)
 
 SDK_VERSION := 1_15
 SDK_URL     := https://download.eurotrucksimulator2.com/scs_sdk_$(SDK_VERSION).zip
@@ -16,6 +16,9 @@ CXXFLAGS := -std=c++17 -O2 -Wall -fPIC $(ARCH)
 SDK_INC  := -I$(SDK_DIR)/include -I$(SDK_DIR)/include/common -I$(SDK_DIR)/include/eurotrucks2 -I$(SDK_DIR)/include/amtrucks
 ifdef LOG
 CXXFLAGS += -DHORI_APEX_LOG_PATH='"$(LOG)"'
+endif
+ifdef CONF
+CXXFLAGS += -DHORI_APEX_CONF_PATH='"$(CONF)"'
 endif
 
 PLUGINS_DIR := $(HOME)/Library/Application Support/Steam/steamapps/common/Euro Truck Simulator 2/Euro Truck Simulator 2.app/Contents/MacOS/plugins
