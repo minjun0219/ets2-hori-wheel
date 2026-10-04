@@ -12,7 +12,6 @@
 #include <cstdlib>
 #include <cmath>
 #include <ctime>
-#include <unistd.h>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -82,7 +81,7 @@ void plog(scs_log_type_t type, const char *fmt, ...)
 	std::lock_guard<std::mutex> g(g_log_lock);
 	if (FILE *f = fopen(log_path(), "a")) {
 		char ts[32]; time_t t = time(nullptr); strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", localtime(&t));
-		fprintf(f, "%s uid=%d %s\n", ts, (int)getuid(), msg);
+		fprintf(f, "%s %s\n", ts, msg);
 		fclose(f);
 	}
 }
