@@ -33,6 +33,9 @@ make check      # 게임 없이 3초: 장치 등록 · 이름 규칙 · 휠 연�
 make install    # ~/Library/Application Support/Steam/.../Euro Truck Simulator 2.app/Contents/MacOS/plugins/
 ```
 
+빌드 없이 넣을 때는 `hori_apex.so` 와 `tools/install.command` 를 같은 폴더에 두고 **`install.command` 를 더블클릭**한다 —
+Steam 라이브러리에서 ETS2 를 찾아 plugins 폴더에 복사하고 원본과 같은지 확인한다.
+
 게임을 켜면 "SDK 플러그인 사용" 경고가 뜬다. 옵션 → 조작에서 **"HORI Racing Wheel Apex SDK"** 를 고르고 `steer` · `thr` · `brk` 를 연결한다.
 
 ## 확인 도구
