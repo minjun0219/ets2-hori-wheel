@@ -62,7 +62,7 @@ async function tick() {
     st.style.marginLeft = steer < 0 ? `${50 + steer * 50}%` : '50%';
     st.style.width = `${Math.abs(steer) * 50}%`;
     set('steer', steer, v => (v * 135).toFixed(0) + '°');
-    for (const k of ['thr', 'brk', 'l2', 'r2']) { document.getElementById(k).style.width = pct(s[k] ?? 0) + '%'; set(k, s[k] ?? 0, v => (v * 100).toFixed(0) + '%'); }
+    for (const k of ['thr', 'brk', 'l2', 'r2']) { const v = ((s[k] ?? -1) + 1) / 2; document.getElementById(k).style.width = pct(v) + '%'; set(k, v, x => (x * 100).toFixed(0) + '%'); }  // -1…+1 → 0…100%
     for (let i = 1; i <= 19; i++) document.getElementById('b' + i).classList.toggle('on', !!s['b' + i]);
     const el = document.getElementById('status'); el.textContent = '수신 중'; el.className = '';
   } catch {

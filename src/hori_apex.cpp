@@ -50,6 +50,9 @@ char g_labels[INPUT_COUNT][24];
 
 std::atomic<unsigned long> g_reports{0}, g_frames{0};
 std::atomic<unsigned> g_thr_max{0}, g_brk_max{0};
+// 진단: 직전 5초 동안 바이트별 최소 · 최대 — 움직인 바이트를 찾아 매핑을 실측한다.
+uint8_t g_bmin[kReportLen], g_bmax[kReportLen];
+bool g_brange_init = false;
 std::mutex g_log_lock;
 
 // 로그 파일 경로: 환경 변수 HORI_APEX_LOG > 빌드 때 HORI_APEX_LOG_PATH > ~/Library/Logs/hori-apex.log
@@ -90,6 +93,8 @@ void on_report(void *, IOReturn, void *, IOHIDReportType, uint32_t, uint8_t *rep
 	memcpy(g_report, report, kReportLen);
 	g_have_report = true;
 	++g_reports;
+	if (!g_brange_init) { memcpy(g_bmin, report, kReportLen); memcpy(g_bmax, report, kReportLen); g_brange_init = true; }
+	for (size_t i = 0; i < kReportLen; ++i) { if (report[i] < g_bmin[i]) g_bmin[i] = report[i]; if (report[i] > g_bmax[i]) g_bmax[i] = report[i]; }
 	// 상태 로그용: 직전 5초 동안 페달 최대값
 	const unsigned t = u16(report, 52), b = u16(report, 54);
 	for (unsigned cur = g_thr_max.load(); t > cur && !g_thr_max.compare_exchange_weak(cur, t);) {}
@@ -125,8 +130,15 @@ void hid_thread()
 		unsigned steer, thr, brk;
 		{ std::lock_guard<std::mutex> g(g_lock); steer = g_have_report ? u16(g_report, 50) : 0; }
 		thr = g_thr_max.exchange(0); brk = g_brk_max.exchange(0);
-		plog(SCS_LOG_TYPE_message, "[hori-apex] status reports=%lu frames=%lu steer_raw=0x%04x thr_max=0x%04x brk_max=0x%04x",
-			g_reports.load(), g_frames.load(), steer, thr, brk);
+		char moved[512]; int n = 0; moved[0] = 0;
+		{
+			std::lock_guard<std::mutex> g(g_lock);
+			for (size_t i = 0; i < kReportLen; ++i)
+				if (g_brange_init && g_bmin[i] != g_bmax[i]) n += snprintf(moved + n, sizeof moved - n, " %zu:%02x-%02x", i, g_bmin[i], g_bmax[i]);
+			g_brange_init = false;
+		}
+		plog(SCS_LOG_TYPE_message, "[hori-apex] status reports=%lu frames=%lu steer_raw=0x%04x thr_max=0x%04x brk_max=0x%04x moved=[%s ]",
+			g_reports.load(), g_frames.load(), steer, thr, brk, moved);
 	});
 	CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopDefaultMode);
 	CFRunLoopRun();
@@ -145,10 +157,12 @@ float axis_value(const uint8_t *r, scs_u32_t i)
 		const float s = (static_cast<int>(u16(r, 50)) - 0x8000) / 32768.0f;
 		return s < -1.f ? -1.f : (s > 1.f ? 1.f : s);
 	}
-	case AX_THROTTLE: return u16(r, 52) / 65535.0f;
-	case AX_BRAKE:    return u16(r, 54) / 65535.0f;
-	case AX_L2:       return u16(r, 24) / 65535.0f;
-	case AX_R2:       return u16(r, 26) / 65535.0f;
+	// 페달 · 아날로그 버튼은 -1(뗌) … +1(끝까지). 게임은 축을 -1 … +1 로 읽어서 0 … 1 을 주면 뗀 상태(0)가
+	// 가운데(50%)로 잡혔다 — 브레이크가 늘 반쯤 밟혀 키보드 가속까지 막혔다(2026-10-04 실측).
+	case AX_THROTTLE: return u16(r, 52) / 32767.5f - 1.0f;
+	case AX_BRAKE:    return u16(r, 54) / 32767.5f - 1.0f;
+	case AX_L2:       return u16(r, 24) / 32767.5f - 1.0f;
+	case AX_R2:       return u16(r, 26) / 32767.5f - 1.0f;
 	}
 	return 0.f;
 }
